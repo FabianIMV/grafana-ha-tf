@@ -39,36 +39,24 @@ resource "kubernetes_deployment" "postgres" {
             name  = "POSTGRES_PASSWORD"
             value = var.postgres_password
           }
+          env {
+            name  = "POSTGRES_USER"
+            value = "grafana"
+          }
 
           volume_mount {
             name       = "postgres-storage"
             mount_path = "/var/lib/postgresql/data"
+            sub_path   = "postgres"
           }
         }
 
         volume {
           name = "postgres-storage"
-          persistent_volume_claim {
-            claim_name = kubernetes_persistent_volume_claim.postgres_pvc.metadata[0].name
-          }
+          empty_dir {}
         }
       }
     }
-  }
-}
-
-resource "kubernetes_persistent_volume_claim" "postgres_pvc" {
-  metadata {
-    name = "postgres-pvc"
-  }
-  spec {
-    access_modes = ["ReadWriteOnce"]
-    resources {
-      requests = {
-        storage = "5Gi"
-      }
-    }
-    storage_class_name = "hostpath"
   }
 }
 

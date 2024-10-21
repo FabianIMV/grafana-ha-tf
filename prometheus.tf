@@ -27,8 +27,47 @@ resource "kubernetes_deployment" "prometheus" {
           image = "prom/prometheus:v2.30.3"
           name  = "prometheus"
 
+          args = [
+            "--config.file=/etc/prometheus/prometheus.yml",
+            "--storage.tsdb.path=/prometheus",
+            "--storage.tsdb.max-block-duration=2h",
+            "--storage.tsdb.min-block-duration=2h",
+            "--web.enable-lifecycle"
+          ]
+
           port {
             container_port = 9090
+          }
+
+          volume_mount {
+            name       = "prometheus-storage"
+            mount_path = "/prometheus"
+          }
+          volume_mount {
+            name       = "prometheus-config"
+            mount_path = "/etc/prometheus"
+          }
+        }
+
+        container {
+          image = "quay.io/thanos/thanos:v0.30.2"
+          name  = "thanos-sidecar"
+
+          args = [
+            "sidecar",
+            "--tsdb.path=/prometheus",
+            "--prometheus.url=http://localhost:9090",
+            "--grpc-address=0.0.0.0:10901",
+            "--http-address=0.0.0.0:10902"
+          ]
+
+          port {
+            container_port = 10901
+            name           = "grpc"
+          }
+          port {
+            container_port = 10902
+            name           = "http"
           }
 
           volume_mount {
@@ -39,8 +78,13 @@ resource "kubernetes_deployment" "prometheus" {
 
         volume {
           name = "prometheus-storage"
-          persistent_volume_claim {
-            claim_name = kubernetes_persistent_volume_claim.prometheus_pvc.metadata[0].name
+          empty_dir {}
+        }
+
+        volume {
+          name = "prometheus-config"
+          config_map {
+            name = "prometheus-config"
           }
         }
       }
@@ -48,18 +92,24 @@ resource "kubernetes_deployment" "prometheus" {
   }
 }
 
-resource "kubernetes_persistent_volume_claim" "prometheus_pvc" {
+resource "kubernetes_config_map" "prometheus_config" {
   metadata {
-    name = "prometheus-pvc"
+    name = "prometheus-config"
   }
-  spec {
-    access_modes = ["ReadWriteOnce"]
-    resources {
-      requests = {
-        storage = "5Gi"
-      }
-    }
-    storage_class_name = "hostpath"
+
+  data = {
+    "prometheus.yml" = <<EOF
+global:
+  scrape_interval: 15s
+  external_labels:
+    monitor: 'thanos-prometheus'
+    cluster: 'cluster-name'
+
+scrape_configs:
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+EOF
   }
 }
 
@@ -74,6 +124,22 @@ resource "kubernetes_service" "prometheus" {
     port {
       port        = 9090
       target_port = 9090
+    }
+  }
+}
+
+resource "kubernetes_service" "thanos_sidecar" {
+  metadata {
+    name = "thanos-sidecar"
+  }
+  spec {
+    selector = {
+      app = kubernetes_deployment.prometheus.metadata[0].labels.app
+    }
+    port {
+      port        = 10901
+      target_port = 10901
+      name        = "grpc"
     }
   }
 }

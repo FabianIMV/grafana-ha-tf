@@ -37,7 +37,7 @@ resource "kubernetes_deployment" "grafana" {
           }
           env {
             name  = "GF_DATABASE_HOST"
-            value = "postgres.default.svc.cluster.local:5432"
+            value = "postgres:5432"
           }
           env {
             name  = "GF_DATABASE_NAME"
@@ -45,7 +45,7 @@ resource "kubernetes_deployment" "grafana" {
           }
           env {
             name  = "GF_DATABASE_USER"
-            value = "postgres"
+            value = "grafana"
           }
           env {
             name  = "GF_DATABASE_PASSWORD"
@@ -73,7 +73,7 @@ resource "kubernetes_deployment" "grafana" {
               port = 3000
             }
             initial_delay_seconds = 30
-            period_seconds = 10
+            period_seconds        = 10
           }
 
           readiness_probe {
@@ -82,15 +82,13 @@ resource "kubernetes_deployment" "grafana" {
               port = 3000
             }
             initial_delay_seconds = 30
-            period_seconds = 10
+            period_seconds        = 10
           }
         }
 
         volume {
           name = "grafana-storage"
-          persistent_volume_claim {
-            claim_name = kubernetes_persistent_volume_claim.grafana_pvc.metadata[0].name
-          }
+          empty_dir {}
         }
         
         volume {
@@ -101,21 +99,6 @@ resource "kubernetes_deployment" "grafana" {
         }
       }
     }
-  }
-}
-
-resource "kubernetes_persistent_volume_claim" "grafana_pvc" {
-  metadata {
-    name = "grafana-pvc"
-  }
-  spec {
-    access_modes = ["ReadWriteOnce"]
-    resources {
-      requests = {
-        storage = "5Gi"
-      }
-    }
-    storage_class_name = "hostpath"
   }
 }
 
@@ -149,12 +132,14 @@ datasources:
     url: 'http://prometheus:9090'
     access: proxy
     isDefault: true
+  - name: Thanos
+    type: prometheus
+    url: 'http://thanos-query:9090'
+    access: proxy
   - name: Loki
     type: loki
     url: 'http://loki:3100'
     access: proxy
-    jsonData:
-      maxLines: 1000
 EOF
   }
 }
